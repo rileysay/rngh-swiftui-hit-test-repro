@@ -17,23 +17,25 @@ to `RNGestureHandlerButton`'s `hitTest:withEvent:` prevents the crash on my devi
 - iOS: 26.5.2
 - Device: iPhone 16 Pro
 - New Architecture / Fabric
-- `enableSwiftUIBasedFilters` explicitly enabled through a native override
+- React Native's experimental `enableSwiftUIBasedFilters` flag explicitly enabled through a native override
 
 ## Reproduction
 
-A disabled Touchable is inside a view with `filter: [{ blur: 0 }]`.
-The SwiftUI filter flag must be enabled and the app rebuilt. In this React Native
-version, a blur filter with radius 0 still creates the SwiftUI container.
-
-In the reproduction app, select **Original case**, select **Enable test area**,
-and tap the disabled outer area. Leave **Pointer-events workaround** off.
-Compare with **Patched case**.
-
 Reproduction repository: https://github.com/rileysay/rngh-swiftui-hit-test-repro
 
-The standalone app has built successfully on EAS; its device results have not yet
-been recorded here. The results below were observed using the same test screen
-in the original app.
+1. Follow the repository's instructions to build and install the iOS Debug development client.
+2. Select **Original case**, leaving **Pointer-events workaround** off.
+3. Select **Enable test area** and tap the disabled outer Touchable.
+4. Reopen the app and compare with **Patched case**, again enabling the test area before tapping.
+
+A disabled Touchable is inside a view with `filter: [{ blur: 0 }]`.
+The SwiftUI filter flag must be enabled and the app rebuilt; the repository
+includes this configuration. In this React Native version, a blur filter with
+radius 0 still creates the SwiftUI container.
+
+The repository extracts the test screen used in my original app and has built
+successfully on EAS. The device observations below are from that screen in my
+original app; standalone device results have not yet been recorded.
 
 ## Observed behaviour
 
@@ -43,7 +45,8 @@ in the original app.
 - An enabled nested Touchable responds, but tapping the surrounding disabled
   area crashes without the guard.
 
-Expected: the disabled area should ignore the tap without crashing.
+Expected: the disabled area should ignore the tap without crashing, while an
+enabled nested Touchable remains usable.
 
 ## Crash details
 
@@ -78,4 +81,13 @@ Eligible child controls can still be found before reaching the boundary, which
 appears consistent with the nested-button behaviour introduced in
 [PR #1991](https://github.com/software-mansion/react-native-gesture-handler/pull/1991).
 
-Would this boundary check be appropriate?
+## AI assistance
+
+I used AI (Codex) to help investigate the native code, create the reproduction
+project, and prepare this report and proposed patch. I personally tested the
+behaviour on my iPhone. The native crash report and guard-on/off results make
+this look like a legitimate bug with a plausible fix. The root-cause explanation
+and broader compatibility of the guard still need maintainer review.
+
+Would this boundary check be appropriate while preserving the intended
+nested-button behaviour?
