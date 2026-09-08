@@ -1,5 +1,9 @@
 # [iOS] Disabled Touchable crashes inside a SwiftUI-backed React Native blur view
 
+Notes for [issue #4494](https://github.com/software-mansion/react-native-gesture-handler/issues/4494)
+and [PR #4495](https://github.com/software-mansion/react-native-gesture-handler/pull/4495),
+updated after the [maintainer's review](https://github.com/software-mansion/react-native-gesture-handler/pull/4495#pullrequestreview-5139569972).
+
 ## Description
 
 Tapping the disabled area of a Gesture Handler `Touchable` inside a SwiftUI-backed React Native blur view crashes my iOS app with a native stack overflow.
@@ -10,14 +14,14 @@ React Native's experimental `enableSwiftUIBasedFilters` flag is explicitly enabl
 
 Additional versions: Expo SDK 57 (`expo` 57.0.20), React 19.2.3, Reanimated 4.6.0, and Worklets 0.12.1.
 
-### Device observations
+### Historical device observations: initial patch
 
 - Tapping the disabled outer area crashes.
-- Adding the native boundary guard below prevents the crash without disabling pointer events.
+- Adding the initial boundary guard, which returned `nil` at the button, prevents the crash without disabling pointer events.
 - Setting `pointerEvents="none"` also prevents the crash.
 - An enabled nested Touchable responds, but tapping the surrounding disabled area crashes without the guard.
 
-These observations are from the test screen in my original app. The linked repository extracts that screen and has built successfully on EAS; standalone device results have not yet been recorded.
+These observations are from the test screen in my original app. The earlier standalone project also built successfully on EAS. Neither those device observations nor that build verifies the revised fix below.
 
 ### Crash details
 
@@ -31,36 +35,42 @@ The stack includes:
 - `-[RNGestureHandlerButtonComponentView hitTest:withEvent:]`
 - React Native `RCTViewComponentView` hit testing
 
-### Suspected cause and proposed fix
+### Suspected cause and revised fix
 
 The hit-test loop can walk beyond the disabled button into its ancestors. I suspect returning a SwiftUI hosting ancestor causes the recursive hit testing.
 
-Stopping at the button boundary prevents the crash on my device:
+The initial patch returned `nil` at the button boundary and stopped the crash on my device. The maintainer identified a behavior regression: returning `nil` lets a sibling underneath the disabled button receive the tap.
+
+The revised loop stops at the button and returns it as the target instead:
 
 ```objc
-while (inner && ![self shouldHandleTouch:inner atPoint:point]) {
-  if (inner == self) {
-    return nil;
-  }
+RNGHUIView *inner = [super hitTest:point withEvent:event];
+while (inner && inner != self && ![self shouldHandleTouch:inner atPoint:point]) {
   inner = inner.superview;
 }
+return inner;
 ```
 
-Eligible child controls can still be found before reaching the boundary, which appears consistent with the nested-button behaviour introduced in [PR #1991](https://github.com/software-mansion/react-native-gesture-handler/pull/1991).
+This keeps the disabled button in front of its siblings. An early `if (!_userEnabled) { return NO; }` in `beginTrackingWithTouch:withEvent:` prevents it from beginning tracking. The macOS `mouseDown:`, `mouseUp:`, and `mouseDragged:` methods each get an early `if (!_userEnabled) { return; }`.
+
+Eligible child controls can still be found before reaching the boundary, preserving the intended nested-button behavior from [PR #1991](https://github.com/software-mansion/react-native-gesture-handler/pull/1991).
+
+The current reproduction includes these revisions plus a Debug-only original-search switch for the marked blur test button. That switch does not disable the event-tracking guards or change the separate sibling-overlay test.
+
+**Revised validation is pending:** I still need to rebuild and test this version on my iPhone. macOS has not been built or tested because I do not have access to a Mac. The automated tests use mocked native views; they do not run UIKit, SwiftUI, or AppKit.
 
 ### AI assistance
 
-I used AI (Codex) to help investigate the native code, create the reproduction project, and prepare this report and proposed patch. I personally tested the behaviour on my iPhone. The native crash report and guard-on/off results make this look like a legitimate bug with a plausible fix. The root-cause explanation and broader compatibility of the guard still need maintainer review.
-
-Would this boundary check be appropriate while preserving the intended nested-button behaviour?
+I used AI (Codex) to help investigate the native code, create the reproduction project, and prepare this report and patch. I personally tested the original crash and initial patch on my iPhone. The revised approach follows the maintainer's feedback and has not yet been retested on my device.
 
 ## Steps to reproduce
 
-1. Follow the reproduction repository's instructions to build and install the iOS **Debug** development client. The repository includes the native SwiftUI filter flag override.
+1. Follow the reproduction repository's instructions to **rebuild and reinstall** the iOS **Debug** development client from the current revision. An older build or Metro reload will not contain the revised native fix. The repository includes the native SwiftUI filter flag override.
 2. Start Metro and open the app. Select **Original case**, leaving **Pointer-events workaround** off.
 3. Select **Enable test area** and tap the disabled outer Touchable.
 4. Reopen the app and select **Patched case**. Leave the pointer-events workaround off, enable the test area, and tap the same area to compare.
-5. To check nesting, turn on **Enabled inner Touchable** and re-enable the test area. Compare taps on the inner button and the disabled outer area around it.
+5. With **Patched case** selected, turn on **Enabled inner Touchable** and re-enable the test area. Tapping the inner button should increment only its counter. Tapping the surrounding disabled area should change neither counter and should not crash.
+6. Select **Enable sibling test** in **Sibling overlay**. Tapping the gray disabled overlay should leave both counters unchanged. Tapping an exposed green edge should increment only **Sibling presses**. This case has no blur and always uses the compiled revised fix, independently of the Original / Patched presets above.
 
 ## Reproduction link
 

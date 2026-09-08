@@ -4,6 +4,11 @@ An isolated iOS test app for a native hit-testing crash involving a disabled
 Gesture Handler `Touchable` inside a React Native SwiftUI-backed blur view.
 It opens directly into the same controls used to investigate the original crash.
 
+Tracks [issue #4494](https://github.com/software-mansion/react-native-gesture-handler/issues/4494)
+and the revision requested in [PR #4495's review](https://github.com/software-mansion/react-native-gesture-handler/pull/4495#pullrequestreview-5139569972).
+The current patch keeps disabled buttons as touch targets so taps cannot pass
+through to siblings, while suppressing disabled button tracking.
+
 ```sh
 git clone https://github.com/rileysay/rngh-swiftui-hit-test-repro.git
 cd rngh-swiftui-hit-test-repro
@@ -33,6 +38,10 @@ optional peer range must not introduce a second Worklets native module.
 Use a current Node.js LTS release compatible with Expo SDK 57 (Node 24 was used
 for the local checks). This needs a native **iOS Debug build**. Expo Go and a web
 preview cannot reproduce this native path.
+
+**Rebuild and reinstall after pulling this revision.** The earlier development
+build contains the old `return nil` fix. A Metro reload or JavaScript update
+cannot replace the native hit-testing and tracking changes.
 
 On macOS with Xcode and CocoaPods:
 
@@ -76,7 +85,7 @@ See [Expo's build-properties documentation](https://docs.expo.dev/versions/lates
 
 ## Test
 
-The test starts with the guard on and the test area inactive. The test state is
+The test starts with the revised fix on and the test area inactive. The test state is
 not saved, so reopening resets it.
 
 1. Select **Patched case**. Keep **Pointer-events workaround** off.
@@ -84,14 +93,26 @@ not saved, so reopening resets it.
    It should do nothing without crashing.
 3. Select **Original case**, then **Enable test area** and tap the same area.
    This is the case that crashed in the original app.
-4. For nested controls, turn on **Enabled inner Touchable** and re-enable the
+4. Select **Patched case** again. For nested controls, turn on **Enabled inner Touchable** and re-enable the
    test area. Tap the inner button, then the disabled outer area around it.
-   The inner press counter should increase; with the guard on the outer area
-   should remain safe.
+   Only the inner press counter should increase. Tapping the surrounding disabled
+   area should change neither counter and should not crash.
 
-The two presets differ only in the native guard setting. Both enable the blur
+The two presets differ only in the blur case's hit-test search. Both enable the blur
 host, disable the outer Touchable, and leave the pointer-events workaround off.
 Changing any option makes the test area inactive until explicitly enabled again.
+The disabled tracking checks remain active in both cases.
+
+A second case, **Sibling overlay**, is the structure from the PR #4495 review:
+an enabled green sibling fills the frame and a disabled gray overlay sits on top.
+Select **Enable sibling test**, then:
+
+1. Tap the gray overlay. Both counters should remain unchanged.
+2. Tap an exposed green edge. Only **Sibling presses** should increase.
+
+This case has no blur and always uses the compiled revised fix. The **Original
+case** / **Patched case** presets above do not change it. The earlier `return nil`
+fix allowed taps on the gray overlay to reach the green sibling underneath.
 
 Other controls allow checking:
 
@@ -110,41 +131,52 @@ be caught by a JavaScript error boundary. Reopen the app to continue comparing.
 There are two native patches:
 
 - `patches/react-native+0.86.3.patch` enables the SwiftUI filter flag.
-- `patches/react-native-gesture-handler+3.2.1.patch` adds the guard and a Debug-only
+- `patches/react-native-gesture-handler+3.2.1.patch` adds the revised fix and a Debug-only
   per-button switch so original and patched behaviour can be compared in one build.
-  **Original case** runs the original ancestor walk for the marked test button.
-  Release builds always retain the guard, so use Debug for this comparison.
+  **Original case** runs a separate copy of the original unbounded ancestor walk
+  for the marked test button only. All disabled tracking checks still apply.
+  Release builds always use the bounded search, so use Debug for this comparison.
 
 The two Metro patches are the original app's Worklets bundle-mode support:
 generated worklet modules can be hashed during bundling, and hot updates are
 forwarded to Worklet runtimes. Metro and metro-runtime are pinned to 0.84.5.
 These JavaScript tooling patches do not change native touch handling.
 
-The proposed upstream fix is only:
+The revised upstream hit-test loop stops at the button and returns it when no
+eligible descendant was found:
 
 ```objc
-if (inner == self) {
-  return nil;
+RNGHUIView *inner = [super hitTest:point withEvent:event];
+while (inner && inner != self && ![self shouldHandleTouch:inner atPoint:point]) {
+  inner = inner.superview;
 }
+return inner;
 ```
 
-inside the `while` loop in `RNGestureHandlerButton`'s `hitTest:withEvent:` before
-advancing to `inner.superview`. The diagnostic switch is not proposed upstream.
-The flag stays enabled while switching cases; the blur-host switch only changes
-the rendered view's filter style.
+Returning the disabled button prevents the parent from trying a sibling behind
+it. An early `if (!_userEnabled) { return NO; }` in
+`beginTrackingWithTouch:withEvent:` prevents that button from starting tracking.
+The macOS `mouseDown:`, `mouseUp:`, and `mouseDragged:` methods each get an early
+`if (!_userEnabled) { return; }` for the same disabled behavior.
+
+These changes follow the maintainer's review. The diagnostic switch is not
+proposed upstream. The SwiftUI flag stays enabled while switching cases; the
+blur-host switch only changes the rendered view's filter style.
 
 ## Validation status
 
-The original in-app test was exercised on an **iPhone 16 Pro running iOS 26.5.2**.
-The user reported that the original disabled outer area crashes, enabling the
-guard prevents it, and disabling pointer events also prevents it. An enabled
-inner Touchable responded with the guard off while the surrounding disabled area
-still crashed.
+**Historical result — initial `return nil` patch:** the original in-app test was
+exercised on an **iPhone 16 Pro running iOS 26.5.2**. The original disabled area
+crashed; the initial boundary guard and the pointer-events workaround each
+prevented that crash. An enabled inner Touchable responded without the guard
+while the surrounding disabled area still crashed. That patch subsequently
+proved to allow touches through to overlapping siblings.
 
-This extracted app successfully completed an iOS Debug development build on EAS
-on September 8, 2026. Standalone device results have not yet been recorded here.
-Confirm it reproduces on-device before describing the standalone reproduction as verified.
-An absence of a crash here would mean the reduced example needs further work.
+The earlier version of this extracted app completed an iOS Debug EAS build on
+September 8, 2026. That build and the earlier device observations do not validate
+the revised fix now in this repository. **The revised iPhone build and device
+tests are pending. macOS has not been built or tested because the reporter does
+not have access to a Mac.**
 
 ```sh
 npm run verify
@@ -157,14 +189,12 @@ source, and build configuration. Tests execute the installed hit-test method's
 control flow with mocked native views and the screen with mocked React/native
 components. They do not execute UIKit or SwiftUI.
 
-Local checks completed: fresh `npm ci --include=dev` with all patches applied, TypeScript,
-13 regression tests, iOS JavaScript export, and Expo config introspection.
-React Doctor reported 100/100 for the standalone project. These checks and the
-successful native build do not replace an iOS device test.
+These source checks do not replace rebuilding and running the blur, nested-button,
+and sibling-overlay cases on an iPhone, or native macOS verification.
 
 ## Share
 
-The simplified issue draft is in [ISSUE.md](ISSUE.md). Link this repository from
+The issue notes and revision status are in [ISSUE.md](ISSUE.md). Link this repository from
 the upstream issue so maintainers can build the same test app. It includes the
 patches, lockfile, scripts, and tests needed for the reproduction.
 

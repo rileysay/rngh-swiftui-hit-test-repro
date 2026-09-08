@@ -1,23 +1,66 @@
 diff --git a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
-index b480fa9..bf94e74 100644
+index b480fa9..ab27552 100644
 --- a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
 +++ b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
-@@ -1470,6 +1470,18 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+@@ -1193,6 +1193,10 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+ 
+ - (void)mouseDown:(NSEvent *)event
+ {
++  if (!_userEnabled) {
++    return;
++  }
++
+   _isTouchInsideBounds = YES;
+   [self handleAnimatePressIn];
+   [super mouseDown:event];
+@@ -1200,6 +1204,10 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+ 
+ - (void)mouseUp:(NSEvent *)event
+ {
++  if (!_userEnabled) {
++    return;
++  }
++
+   NSPoint locationInView = [self convertPoint:[event locationInWindow] fromView:nil];
+   _isHovered = NSPointInRect(locationInView, self.bounds);
+   [self recordHoverSampleForMouseEvent:event];
+@@ -1212,6 +1220,10 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+ 
+ - (void)mouseDragged:(NSEvent *)event
+ {
++  if (!_userEnabled) {
++    return;
++  }
++
+   NSPoint locationInWindow = [event locationInWindow];
+   NSPoint locationInView = [self convertPoint:locationInWindow fromView:nil];
+   BOOL currentlyInside = NSPointInRect(locationInView, self.bounds);
+@@ -1244,6 +1256,10 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+ 
+ - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
+ {
++  if (!_userEnabled) {
++    return NO;
++  }
++
+   _isTouchInsideBounds = YES;
+   // A pencil's hover-out arrives just before touch-down but only schedules the
+   // clear, so `_isHovered` still reflects the open hover. Under Reduce Motion
+@@ -1469,7 +1485,16 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+   }
  
    RNGHUIView *inner = [super hitTest:point withEvent:event];
-   while (inner && ![self shouldHandleTouch:inner atPoint:point]) {
-+    // A disabled button must not return one of its ancestors as the hit view.
-+    // SwiftUI hosting views can re-enter hit testing on that ancestor forever.
-+    if (inner == self) {
+-  while (inner && ![self shouldHandleTouch:inner atPoint:point]) {
 +#if RCT_DEBUG && !TARGET_OS_OSX
-+      // Opt-in A/B reproduction for one lab button; never bypass production guards.
-+      if ([self.accessibilityIdentifier isEqualToString:@"rngh-hit-test-lab-unbounded"]) {
-+        inner = inner.superview;
-+        continue;
-+      }
-+#endif
-+      return nil;
++  // Restore only the original hit-test walk for the explicitly marked lab button.
++  if ([self.accessibilityIdentifier isEqualToString:@"rngh-hit-test-lab-unbounded"]) {
++    while (inner && ![self shouldHandleTouch:inner atPoint:point]) {
++      inner = inner.superview;
 +    }
++    return inner;
++  }
++#endif
++  while (inner && inner != self && ![self shouldHandleTouch:inner atPoint:point]) {
      inner = inner.superview;
    }
    return inner;

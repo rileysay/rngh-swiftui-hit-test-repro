@@ -53,8 +53,21 @@ function harness() {
       find(node => node.type === 'Switch' && node.props.accessibilityLabel === label).props.onValueChange(value); render();
     },
     outer: () => find(node => node.props.accessibilityLabel === 'Outer test Touchable'),
-    gate: () => find(node => node.type === 'View' && node.props.collapsable === false && node.props.pointerEvents !== undefined),
-    filterHost: () => find(node => node.type === 'View' && node.props.collapsable === false && node.props.pointerEvents === undefined),
+    contains(root, label) {
+      return visit(root, node => node.props.accessibilityLabel === label).length > 0;
+    },
+    gate() {
+      return find(node => node.type === 'View' && node.props.collapsable === false &&
+        node.props.pointerEvents !== undefined && this.contains(node, 'Outer test Touchable'));
+    },
+    siblingGate() {
+      return find(node => node.type === 'View' && node.props.collapsable === false &&
+        node.props.pointerEvents !== undefined && this.contains(node, 'Enabled sibling Touchable'));
+    },
+    filterHost() {
+      return find(node => node.type === 'View' && node.props.collapsable === false &&
+        node.props.pointerEvents === undefined && this.contains(node, 'Outer test Touchable'));
+    },
   };
 }
 
@@ -113,4 +126,21 @@ test('reopening the lab never retains an armed or unpatched configuration', () =
   const reopened = harness();
   assert.equal(reopened.outer().props.testID, 'rngh-hit-test-lab-fixed');
   assert.equal(reopened.gate().props.pointerEvents, 'none');
+});
+
+test('the sibling overlay case stacks a disabled button on top of an enabled sibling', () => {
+  const h = harness();
+  const sibling = h.find(node => node.props.accessibilityLabel === 'Enabled sibling Touchable');
+  const overlay = h.find(node => node.props.accessibilityLabel === 'Disabled overlay Touchable');
+  assert.notEqual(sibling.props.disabled, true);
+  assert.equal(overlay.props.disabled, true);
+  assert.equal(overlay.props.style.left, 40);
+  assert.equal(overlay.props.style.top, 20);
+  assert.equal(overlay.props.style.width, 200);
+  assert.equal(overlay.props.style.height, 80);
+  assert.equal(sibling.props.style.inset, 0);
+  assert.equal(h.siblingGate().props.pointerEvents, 'none');
+  h.press('Enable sibling test');
+  assert.equal(h.siblingGate().props.pointerEvents, 'auto');
+  assert.equal(h.gate().props.pointerEvents, 'none');
 });

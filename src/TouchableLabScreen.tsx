@@ -39,8 +39,11 @@ export default function TouchableLabScreen() {
   const insets = useSafeAreaInsets();
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
   const [armed, setArmed] = useState(false);
+  const [siblingArmed, setSiblingArmed] = useState(false);
   const [outerPresses, setOuterPresses] = useState(0);
   const [innerPresses, setInnerPresses] = useState(0);
+  const [siblingPresses, setSiblingPresses] = useState(0);
+  const [overlayPresses, setOverlayPresses] = useState(0);
   const run = useRef(0);
 
   const resetCounts = () => {
@@ -78,6 +81,7 @@ export default function TouchableLabScreen() {
           Requires an iOS Debug build from this project.
           Expo Go cannot run this test. Turning the fix
           off may close the app; reopening starts with safe defaults.
+          Rebuild after pulling this revision; a Metro reload does not apply the native changes.
         </Text>
         {Platform.OS !== "ios" ? (
           <Text style={styles.notice}>This crash and native A/B switch are iOS-only.</Text>
@@ -149,6 +153,66 @@ export default function TouchableLabScreen() {
           Each preset resets the counters and disables the test area. No crash in
           this reduced example does not rule out the original app crash.
         </Text>
+
+        <Text style={styles.label}>Sibling overlay (PR review case)</Text>
+        <Text style={styles.help}>
+          m-bert's overlapping structure from PR #4495: an enabled sibling fills
+          the frame, and a disabled overlay sits on top. Tapping the gray overlay
+          must leave both press counters unchanged. The revised native fix keeps
+          the disabled overlay as the touch target and ignores its press.
+          This case uses the patch compiled into your build; the presets above
+          only switch the SwiftUI test.
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            if (siblingArmed) {
+              setSiblingArmed(false);
+              return;
+            }
+            setSiblingPresses(0);
+            setOverlayPresses(0);
+            setSiblingArmed(true);
+          }}
+          style={styles.arm}
+        >
+          <Text style={styles.armText}>{siblingArmed ? "Disable sibling test" : "Enable sibling test"}</Text>
+        </Pressable>
+        <Text accessibilityLiveRegion="polite" style={styles.help}>
+          {siblingArmed
+            ? "Tap the gray overlay, then the exposed green edges."
+            : "Sibling test is inactive. Enable it, then tap the overlay."}
+        </Text>
+        <View collapsable={false} pointerEvents={siblingArmed ? "auto" : "none"} style={styles.testFrame}>
+          <View collapsable={false} style={styles.siblingHost}>
+            <Touchable
+              testID="rngh-hit-test-lab-sibling-enabled"
+              accessibilityLabel="Enabled sibling Touchable"
+              onPress={() => setSiblingPresses(current => current + 1)}
+              style={styles.siblingEnabled}
+            >
+              <Text style={styles.siblingEnabledLabel}>Enabled sibling</Text>
+            </Touchable>
+            <Touchable
+              testID="rngh-hit-test-lab-sibling-disabled"
+              accessibilityLabel="Disabled overlay Touchable"
+              accessibilityState={{ disabled: true }}
+              disabled
+              onPress={() => setOverlayPresses(current => current + 1)}
+              style={styles.siblingOverlay}
+            >
+              <Text style={styles.siblingOverlayLabel}>Disabled overlay</Text>
+            </Touchable>
+          </View>
+        </View>
+        <Text accessibilityLiveRegion="polite" style={styles.count}>
+          Sibling presses: {siblingPresses} · Overlay presses: {overlayPresses}
+        </Text>
+        <Text style={styles.help}>
+          Correct: gray taps leave both counters unchanged; green-edge taps increment
+          only the sibling counter. If a gray tap increments the sibling counter,
+          the disabled overlay leaked the touch to the view behind it.
+        </Text>
       </ScrollView>
     </View>
   );
@@ -175,4 +239,18 @@ const styles = StyleSheet.create({
   testTitle: { color: colors.text, fontSize: 19, fontWeight: "600" },
   innerButton: { minHeight: 48, paddingHorizontal: 18, justifyContent: "center", backgroundColor: colors.cardElevated, borderRadius: 12 },
   count: { color: colors.text, fontSize: 15, textAlign: "center" },
+  siblingHost: { height: 120 },
+  siblingEnabled: { position: "absolute", inset: 0, backgroundColor: "#9fd8a8", justifyContent: "flex-end", padding: 8 },
+  siblingEnabledLabel: { color: "#14301a", fontSize: 13, fontWeight: "700" },
+  siblingOverlay: {
+    position: "absolute",
+    left: 40,
+    top: 20,
+    width: 200,
+    height: 80,
+    backgroundColor: "#9a9a9a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  siblingOverlayLabel: { color: "#1f1f1f", fontSize: 15, fontWeight: "700" },
 });
