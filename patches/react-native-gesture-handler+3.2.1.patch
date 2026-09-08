@@ -1,0 +1,23 @@
+diff --git a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
+index b480fa9..bf94e74 100644
+--- a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
++++ b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerButton.mm
+@@ -1470,6 +1470,18 @@ static CATransform3D RNGHCenterScaleTransform(NSRect bounds, CGFloat scale)
+ 
+   RNGHUIView *inner = [super hitTest:point withEvent:event];
+   while (inner && ![self shouldHandleTouch:inner atPoint:point]) {
++    // A disabled button must not return one of its ancestors as the hit view.
++    // SwiftUI hosting views can re-enter hit testing on that ancestor forever.
++    if (inner == self) {
++#if RCT_DEBUG && !TARGET_OS_OSX
++      // Opt-in A/B reproduction for one lab button; never bypass production guards.
++      if ([self.accessibilityIdentifier isEqualToString:@"rngh-hit-test-lab-unbounded"]) {
++        inner = inner.superview;
++        continue;
++      }
++#endif
++      return nil;
++    }
+     inner = inner.superview;
+   }
+   return inner;

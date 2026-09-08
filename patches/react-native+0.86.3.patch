@@ -1,0 +1,18 @@
+diff --git a/node_modules/react-native/ReactCommon/react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h b/node_modules/react-native/ReactCommon/react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h
+--- a/node_modules/react-native/ReactCommon/react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h
++++ b/node_modules/react-native/ReactCommon/react/featureflags/ReactNativeFeatureFlagsOverridesOSSStable.h
+@@ -13,6 +13,14 @@ namespace facebook::react {
+ 
+ class ReactNativeFeatureFlagsOverridesOSSStable : public ReactNativeFeatureFlagsDefaults {
+  public:
++#if defined(__APPLE__)
++  // Enable SwiftUI-backed filter views for the hit-test reproduction.
++  bool enableSwiftUIBasedFilters() override
++  {
++    return true;
++  }
++#endif
++
+   bool enableBridgelessArchitecture() override
+   {
+     return true;

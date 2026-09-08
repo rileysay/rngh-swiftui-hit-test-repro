@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Touchable Hit Test",
+    "slug": "rngh-swiftui-hit-test-repro",
+    "scheme": "rngh-hit-test-repro",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": [
+      "ios"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.rileysay.rnghswiftuihittest",
+      "deploymentTarget": "16.4",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true,
+            "reactNativeReleaseLevel": "stable"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d287851c-895a-4b60-8447-baae40e4ca93"
+      }
+    },
+    "owner": "rileysk3"
+  }
+}
